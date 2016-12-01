@@ -3,7 +3,7 @@ Copyright (c) 2014 Google Inc.
 
 See LICENSE file for full terms of limited license.
 ]]
-
+require "image"
 if not dqn then
     require "initenv"
 end
@@ -86,15 +86,131 @@ local episode_reward
 local screen, reward, terminal = game_env:getState()
 
 local split = false
-if not(opt.name:match('udcign') == nil) then
-    split = true
-end
 
+require 'optim'
+require 'JustScale'
+iterm = require 'iterm'
+
+VAE = require '../inference/VAE'
+require '../inference/KLDCriterion'
+require '../inference/GaussianCriterion'
+require '../inference/Sampler'
+
+encoder = VAE.get_encoder(400)
+decoder = VAE.get_decoder(400)
+
+local input = nn.Identity()()
+local enc_mean, enc_log_var = encoder(input):split(2)
+local z = nn.Sampler()({enc_mean, enc_log_var})
+
+local decoder_mean, decoder_var = decoder(z):split(2)
+local vae = nn.gModule({input},{decoder_mean, decoder_var, enc_mean, enc_log_var})
+gaussianCriterion = nn.GaussianCriterion()
+KLD = nn.KLDCriterion()
+
+local image_scaler = nn.JustScale(80, 80)
+
+vae:cuda()
+gaussianCriterion:cuda()
+KLD:cuda()
+-- image_scaler:cuda()
+
+local vae_params, vae_grads = vae:getParameters()
+
+
+local vae_optim_config = {
+    learningRate = 0.001
+}
+
+local vae_optim_state = {}
+local lowerbound = 0
+
+-- util = {}
+-- function util.oneHot(labels, n)
+--    --[[
+--    Assume labels is a 1D tensor of contiguous class IDs, starting at 1.
+--    Turn it into a 2D tensor of size labels:size(1) x nUniqueLabels
+--    This is a pretty dumb function, assumes your labels are nice.
+--    ]]
+--    local n = n or labels:max()
+--    local nLabels = labels:size(1)
+--    local out = labels.new(nLabels, n):fill(0)
+--    for i=1,nLabels do
+--       out[i][labels[i]] = 1.0
+--    end
+--    return out
+-- end
+
+-- Get/create dataset
+-- if not path.exists(sys.fpath()..'/mnist') then
+--   os.execute[[
+--   curl https://s3.amazonaws.com/torch.data/mnist.tgz -o mnist.tgz
+--   tar xvf mnist.tgz
+--   rm mnist.tgz
+--   ]]
+-- end
+--
+-- local classes = {'0','1','2','3','4','5','6','7','8','9'}
+-- local trainData = torch.load(sys.fpath()..'/mnist/train.t7')
+-- local testData = torch.load(sys.fpath()..'/mnist/test.t7')
+-- trainData.y = util.oneHot(trainData.y)
+-- testData.y = util.oneHot(testData.y)
 
 print("Iteration ..", step)
 while step < opt.steps do
     step = step + 1
     local action_index = agent:perceive(reward, screen, terminal)
+
+    if step >= opt.prog_freq then
+        local s, a, r, s2, term = agent.transitions:sample(agent.minibatch_size)
+        s = image_scaler:forward(s:float():reshape(agent.minibatch_size, 4, 1, 84, 84)[{{}, 1}]):cuda()
+        -- raw = torch.FloatTensor(32, 1, 32, 32)
+        -- for i = 1, 32 do
+        --     raw[i] = trainData.x[torch.ceil(torch.uniform(trainData.x:size(1)))]
+        -- end
+        -- s = image_scaler:forward(raw):cuda()
+
+        local vae_opfunc = function(x)
+            if x ~= vae_params then
+                vae_params:copy(x)
+            end
+
+            --
+            -- rescaled_s = torch.Tensor(s:size(1), 1, 80, 80):typeAs(s)
+            -- for i = 1, s:size(1) do
+            --     rescaled_s[i]:fill(image_pkg.scale(s[i], 80, 80))
+            -- end
+            -- s = rescaled_s
+            --
+            vae:zeroGradParameters()
+            local reconstruction, reconstruction_var, mean, log_var
+            reconstruction, reconstruction_var, mean, log_var = unpack(vae:forward(s))
+            reconstruction = {reconstruction, reconstruction_var}
+
+            if step % 100 == 0 then
+                for i = 1, 10 do
+                    print('')
+                    iterm.image{s[i], reconstruction[1][i]}
+                end
+            end
+
+            local err = gaussianCriterion:forward(reconstruction, s)
+            local df_dw = gaussianCriterion:backward(reconstruction, s)
+
+            local KLDerr = KLD:forward(mean, log_var)
+            local dKLD_dmu, dKLD_dlog_var = unpack(KLD:backward(mean, log_var))
+
+            local error_grads = {df_dw[1], df_dw[2], dKLD_dmu, dKLD_dlog_var}
+
+            vae:backward(s, error_grads)
+
+            local batchlowerbound = err + KLDerr
+            return batchlowerbound, vae_grads
+        end
+
+        x, batchlowerbound = optim.adam(vae_opfunc, vae_params, vae_optim_config, vae_optim_state)
+        lowerbound = lowerbound + batchlowerbound[1]
+    end
 
     -- game over? get next game!
     if not terminal then
@@ -107,12 +223,15 @@ while step < opt.steps do
         end
     end
 
+
     if step % opt.prog_freq == 0 then
         assert(step==agent.numSteps, 'trainer step: ' .. step ..
                 ' & agent.numSteps: ' .. agent.numSteps)
         print("Steps: ", step)
+        print("VAE lower bound: ", lowerbound / opt.prog_freq)
         agent:report()
         collectgarbage()
+        lowerbound = 0
     end
 
     if step%1000 == 0 then collectgarbage() end
