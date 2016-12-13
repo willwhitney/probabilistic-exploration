@@ -92,7 +92,7 @@ require 'JustScale'
 iterm = require 'iterm'
 
 VAE = require '../inference/VAE'
-require '../inference/KLDCriterion'
+require '../inference/KLDFlexCriterion'
 require '../inference/GaussianCriterion'
 require '../inference/Sampler'
 
@@ -106,7 +106,7 @@ local z = nn.Sampler()({enc_mean, enc_log_var})
 local decoder_mean, decoder_var = decoder(z):split(2)
 local vae = nn.gModule({input},{decoder_mean, decoder_var, enc_mean, enc_log_var})
 gaussianCriterion = nn.GaussianCriterion()
-KLD = nn.KLDCriterion()
+KLD = nn.KLDFlexCriterion()
 
 local image_scaler = nn.JustScale(80, 80)
 
@@ -119,7 +119,7 @@ local vae_params, vae_grads = vae:getParameters()
 
 
 local vae_optim_config = {
-    learningRate = 0.001
+    learningRate = 3e-3
 }
 
 local vae_optim_state = {}
@@ -182,9 +182,25 @@ while step < opt.steps do
             -- end
             -- s = rescaled_s
             --
+            -- if s:ne(s):sum() > 0 then
+            --     error("caught nan in s")
+            -- end
             vae:zeroGradParameters()
             local reconstruction, reconstruction_var, mean, log_var
             reconstruction, reconstruction_var, mean, log_var = unpack(vae:forward(s))
+            -- if mean:ne(mean):sum() > 0 then
+            --     error("caught nan in mean")
+            -- end
+            -- if log_var:ne(log_var):sum() > 0 then
+            --     error("caught nan in log_var")
+            -- end
+            -- if reconstruction:ne(reconstruction):sum() > 0 then
+            --     error("caught nan in reconstruction")
+            -- end
+            -- if reconstruction_var:ne(reconstruction_var):sum() > 0 then
+            --     error("caught nan in reconstruction_var")
+            -- end
+
             reconstruction = {reconstruction, reconstruction_var}
 
             if step % 100 == 0 then
@@ -195,14 +211,42 @@ while step < opt.steps do
             end
 
             local err = gaussianCriterion:forward(reconstruction, s)
+            -- if err ~= err then
+            --     error("caught nan in err")
+            -- end
             local df_dw = gaussianCriterion:backward(reconstruction, s)
+            -- if df_dw[1]:ne(df_dw[1]):sum() > 0 then
+            --     error("caught nan in df_dw[1]")
+            -- end
+            -- if df_dw[2]:ne(df_dw[2]):sum() > 0 then
+            --     error("caught nan in df_dw[2]")
+            -- end
+
 
             local KLDerr = KLD:forward(mean, log_var)
+            -- if KLDerr ~= KLDerr then
+            --     error("caught nan in KLDerr")
+            -- end
             local dKLD_dmu, dKLD_dlog_var = unpack(KLD:backward(mean, log_var))
+            -- if dKLD_dmu:ne(dKLD_dmu):sum() > 0 then
+            --     error("caught nan in dKLD_dmu")
+            -- end
+            -- if dKLD_dlog_var:ne(dKLD_dlog_var):sum() > 0 then
+            --     error("caught nan in dKLD_dlog_var")
+            -- end
 
-            local error_grads = {df_dw[1], df_dw[2], dKLD_dmu, dKLD_dlog_var}
+            local error_grads = {df_dw[1], df_dw[2], 0 * dKLD_dmu, 0 * dKLD_dlog_var}
+            -- for i = 1, 4 do
+            --     if error_grads[i]:ne(error_grads[i]):sum() > 0 then
+            --         error("caught nan in error_grads " .. tostring(i))
+            --     end
+            -- end
 
             vae:backward(s, error_grads)
+
+            -- if vae_grads:ne(vae_grads):sum() > 0 then
+            --     error("caught nan in vae_grads")
+            -- end
 
             local batchlowerbound = err + KLDerr
             return batchlowerbound, vae_grads

@@ -87,11 +87,22 @@ function VAE.get_decoder(latent_variable_size)
 
     -- 80
     decoder:add(SpatialConvolution(64, 2,  3, 3,  1, 1,  1, 1))
-    decoder:add(nn.Sigmoid())
+    -- decoder:add(nn.Sigmoid())
 
     mean_logvar = nn.ConcatTable()
-    mean_logvar:add(nn.Select(2, 1))
-    mean_logvar:add(nn.Select(2, 2))
+
+    mean_path = nn.Sequential()
+    mean_path:add(nn.Select(2, 1))
+    mean_path:add(nn.Sigmoid())
+    mean_logvar:add(mean_path)
+
+    mean_logvar
+        :add(nn.Sequential()
+            :add(nn.Select(2, 2))
+            :add(nn.Tanh())
+            :add(nn.MulConstant(5)))
+
+            -- :add(nn.Linear())
     decoder:add(mean_logvar)
     return decoder
 end
