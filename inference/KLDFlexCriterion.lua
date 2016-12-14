@@ -1,6 +1,6 @@
 local KLDCriterion, parent = torch.class('nn.KLDFlexCriterion', 'nn.Criterion')
 
-local sigma_target = 70
+local sigma_target = 10
 
 function KLDCriterion:updateOutput(mean, log_var)
     -- Appendix B from VAE paper: 0.5 * sum(1 + log(sigma^2) - mu^2 - sigma^2)
@@ -31,7 +31,8 @@ function KLDCriterion:updateGradInput(mean, log_var)
     self.gradInput[1] = mean:clone():div(sigma_target^2)
 
     -- Fix this to be nicer
-    self.gradInput[2] = torch.exp(log_var):div(2 * sigma_target^2):mul(-1):add(1/2):mul(-1)
+    -- self.gradInput[2] = torch.exp(log_var):div(2 * sigma_target^2):mul(-1):add(1/2):mul(-1)
+    self.gradInput[2] = torch.exp(log_var):div(2 * sigma_target^2):mul(-1):mul(-1)
 
     return self.gradInput
 end

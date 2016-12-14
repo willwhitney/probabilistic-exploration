@@ -93,6 +93,7 @@ iterm = require 'iterm'
 
 VAE = require '../inference/VAE'
 require '../inference/KLDFlexCriterion'
+require '../inference/KLDCriterion'
 require '../inference/GaussianCriterion'
 require '../inference/Sampler'
 
@@ -106,7 +107,8 @@ local z = nn.Sampler()({enc_mean, enc_log_var})
 local decoder_mean, decoder_var = decoder(z):split(2)
 local vae = nn.gModule({input},{decoder_mean, decoder_var, enc_mean, enc_log_var})
 gaussianCriterion = nn.GaussianCriterion()
-KLD = nn.KLDFlexCriterion()
+-- KLD = nn.KLDFlexCriterion()
+KLD = nn.KLDCriterion()
 
 local image_scaler = nn.JustScale(80, 80)
 
@@ -235,7 +237,7 @@ while step < opt.steps do
             --     error("caught nan in dKLD_dlog_var")
             -- end
 
-            local error_grads = {df_dw[1], df_dw[2], 0 * dKLD_dmu, 0 * dKLD_dlog_var}
+            local error_grads = {df_dw[1], df_dw[2], dKLD_dmu, dKLD_dlog_var}
             -- for i = 1, 4 do
             --     if error_grads[i]:ne(error_grads[i]):sum() > 0 then
             --         error("caught nan in error_grads " .. tostring(i))
