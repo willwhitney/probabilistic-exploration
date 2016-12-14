@@ -18,7 +18,7 @@ end
 
 function scale:forward(x)
     -- print(x:size())
-    local output = torch.Tensor(x:size(1), 1, self.width, self.height):typeAs(x)
+    local output = torch.Tensor(x:size(1), x:size(2), self.width, self.height):typeAs(x)
     for i = 1, x:size(1) do
         output[i]:copy(image.scale(x[i], self.width, self.height, 'bilinear'))
     end

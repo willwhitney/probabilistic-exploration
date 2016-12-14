@@ -3,7 +3,8 @@ Copyright (c) 2014 Google Inc.
 
 See LICENSE file for full terms of limited license.
 ]]
-require "image"
+
+
 if not dqn then
     require "initenv"
 end
@@ -82,14 +83,36 @@ local nrewards
 local nepisodes
 local episode_reward
 
+image = require 'image'
+iterm = require 'iterm'
+
 -- screen is (1 x 3 x 210 x 160)
 local screen, reward, terminal = game_env:getState()
+-- print("screen", screen:size())
+-- screen = screen:reshape(1,3,210,160)
+-- print("screen", screen:size())
+-- iterm.image(screen)
+--
+-- screen = image.scale(screen, 84, 84, 'bilinear')
+-- screen = torch.reshape(screen, 3,210,160):clone():float()
+-- print(screen)
+-- print("screen", screen[{1,1,1}], screen:size())
+-- screen = image.lena():clone()
+
+-- iterm.image(image.scale(screen,84,84))
+
+-- print("screen", screen:size())
+
+-- iterm.image(image.scale(image.lena(), 84,84, 'bilinear'))
+
+-- screen = image.scale(screen, 84, 84, 'bilinear')
+-- iterm.image(image.scale(screen, 84, 84, 'bilinear'))
 
 local split = false
 
 require 'optim'
 require 'JustScale'
-iterm = require 'iterm'
+
 
 VAE = require '../inference/VAE'
 require '../inference/KLDFlexCriterion'
@@ -161,11 +184,35 @@ local lowerbound = 0
 print("Iteration ..", step)
 while step < opt.steps do
     step = step + 1
+
+    -- local new_reward = reward + loss
+
+    --
     local action_index = agent:perceive(reward, screen, terminal)
+    -- local action_index = agent:perceive(reward, screen, terminal)
+    --
 
     if step >= opt.prog_freq then
-        local s, a, r, s2, term = agent.transitions:sample(agent.minibatch_size)
-        s = image_scaler:forward(s:float():reshape(agent.minibatch_size, 4, 1, 84, 84)[{{}, 1}]):cuda()
+        -- local s, a, r, s2, term = agent.transitions:sample(agent.minibatch_size)
+        local s, a, r, s2, term = agent.transitions:sample_raw(agent.minibatch_size)
+        -- s = image_scaler:forward(s:float():reshape(agent.minibatch_size, 4, 1, 84, 84)[{{}, 1}]):cuda()
+        -- print(s:size())
+
+        -- raw is (4 x 3 x 210 x 160)
+        -- s = s:reshape(agent.minibatch_size, 4, 3, 210, 160)[{{}, 1}]:float()
+        s = s:reshape(agent.minibatch_size, 4, 3, 210, 160)[{{}, 1}]:float()
+
+        if step % 100 == 0 then
+          for i = 1, 10 do
+              print('')
+              iterm.image{s[i]}
+          end
+        end
+
+        s = image_scaler:forward(s):cuda()
+        -- print(s:size())
+        -- s = image_scaler:forward(s:float():reshape(agent.minibatch_size, 4, 3, 84, 84)[{{}, 1}]):cuda()
+
         -- raw = torch.FloatTensor(32, 1, 32, 32)
         -- for i = 1, 32 do
         --     raw[i] = trainData.x[torch.ceil(torch.uniform(trainData.x:size(1)))]
@@ -204,13 +251,19 @@ while step < opt.steps do
             -- end
 
             reconstruction = {reconstruction, reconstruction_var}
+            -- print("reconstruction", reconstruction)
+            -- print("reconstruction", reconstruction[1][1]:size())
 
             if step % 100 == 0 then
                 for i = 1, 10 do
                     print('')
                     iterm.image{s[i], reconstruction[1][i]}
+                    -- iterm.image{s[i]}
+                    -- iterm.image{reconstruction[1][i]}
                 end
             end
+
+            -- iterm.image{reconstruction[1][1]}
 
             local err = gaussianCriterion:forward(reconstruction, s)
             -- if err ~= err then
@@ -237,7 +290,7 @@ while step < opt.steps do
             --     error("caught nan in dKLD_dlog_var")
             -- end
 
-            local error_grads = {df_dw[1], df_dw[2], dKLD_dmu, dKLD_dlog_var}
+            local error_grads = {df_dw[1], df_dw[2], 0.05 * dKLD_dmu, 0.05 * dKLD_dlog_var}
             -- for i = 1, 4 do
             --     if error_grads[i]:ne(error_grads[i]):sum() > 0 then
             --         error("caught nan in error_grads " .. tostring(i))

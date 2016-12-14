@@ -16,7 +16,7 @@ function VAE.get_encoder(latent_variable_size)
     encoder:add(nn.SpatialMaxPooling(2, 2))
 
     -- 40
-    encoder:add(SpatialConvolution(64, 128,  3, 3,  1, 1,  1, 1))
+    encoder:add(SpatialConvolution(64, 64,  3, 3,  1, 1,  1, 1))
     encoder:add(SpatialBatchNormalization(128))
     encoder:add(nn.ReLU(true))
     encoder:add(nn.SpatialMaxPooling(2, 2))
