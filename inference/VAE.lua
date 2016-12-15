@@ -99,8 +99,9 @@ function VAE.get_decoder(latent_variable_size)
     mean_logvar
         :add(nn.Sequential()
             :add(nn.Select(2, 2))
+            -- :add(nn.Sigmoid()))
             :add(nn.Tanh())
-            :add(nn.MulConstant(5)))
+            :add(nn.MulConstant(1)))
 
             -- :add(nn.Linear())
     decoder:add(mean_logvar)
