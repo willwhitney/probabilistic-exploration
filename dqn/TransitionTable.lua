@@ -10,6 +10,7 @@ local trans = torch.class('dqn.TransitionTable')
 
 
 function trans:__init(args)
+    self.ncols = args.ncols
     self.stateDim = args.stateDim
     self.numActions = args.numActions
     self.histLen = args.histLen
@@ -51,7 +52,7 @@ function trans:__init(args)
         end
     end
 
-    self.s = torch.ByteTensor(self.maxSize, self.stateDim):fill(0)
+    self.s = torch.ByteTensor(self.maxSize, self.ncols*self.stateDim):fill(0)
     self.a = torch.LongTensor(self.maxSize):fill(0)
     self.r = torch.zeros(self.maxSize)
     self.t = torch.ByteTensor(self.maxSize):fill(0)
@@ -63,7 +64,7 @@ function trans:__init(args)
     self.recent_a = {}
     self.recent_t = {}
 
-    local s_size = self.stateDim*histLen
+    local s_size = self.ncols*self.stateDim*histLen
     self.buf_a      = torch.LongTensor(self.bufferSize):fill(0)
     self.buf_r      = torch.zeros(self.bufferSize)
     self.buf_term   = torch.ByteTensor(self.bufferSize):fill(0)
@@ -99,7 +100,8 @@ function trans:fill_buffer()
     self.buf_ind = 1
     local ind
     for buf_ind=1,self.bufferSize do
-        local s, a, r, s2, term = self:sample_one(1)
+        -- local s, a, r, s2, term = self:sample_one(1)
+        local s, a, r, s2, term = self:sample_one(1) -- EDIT
         self.buf_s[buf_ind]:copy(s)
         self.buf_a[buf_ind] = a
         self.buf_r[buf_ind] = r
@@ -167,6 +169,49 @@ function trans:sample(batch_size)
     return buf_s[range], buf_a[range], buf_r[range], buf_s2[range], buf_term[range]
 end
 
+
+-- function trans:concatFrames(index, use_recent)
+--     if use_recent then
+--         s, t = self.recent_s, self.recent_t
+--     else
+--         s, t = self.s, self.t
+--     end
+--
+--     local fullstate = s[1].new()
+--     fullstate:resize(self.histLen, unpack(s[1]:size():totable()))
+--
+--     -- Zero out frames from all but the most recent episode.
+--     local zero_out = false
+--     local episode_start = self.histLen
+--
+--     for i=self.histLen-1,1,-1 do
+--         if not zero_out then
+--             for j=index+self.histIndices[i]-1,index+self.histIndices[i+1]-2 do
+--                 if t[j] == 1 then
+--                     zero_out = true
+--                     break
+--                 end
+--             end
+--         end
+--
+--         if zero_out then
+--             fullstate[i]:zero()
+--         else
+--             episode_start = i
+--         end
+--     end
+--
+--     if self.zeroFrames == 0 then
+--         episode_start = 1
+--     end
+--
+--     -- Copy frames from the current episode.
+--     for i=episode_start,self.histLen do
+--         fullstate[i]:copy(s[index+self.histIndices[i]-1])
+--     end
+--
+--     return fullstate
+-- end
 
 function trans:concatFrames(index, use_recent)
     if use_recent then
@@ -268,6 +313,12 @@ function trans:get(index)
     return s, self.a[ar_index], self.r[ar_index], s2, self.t[ar_index+1]
 end
 
+-- function trans:get(index)
+--     local ar_index = index+self.recentMemSize-1
+--
+--     return s, self.a[ar_index], self.r[ar_index], s2, self.t[ar_index+1]
+-- end
+
 
 function trans:add(s, a, r, term)
     assert(s, 'State cannot be nil')
@@ -346,7 +397,8 @@ to create an empty transition table.
 @param file (FILE object ) @see torch.DiskFile
 --]]
 function trans:write(file)
-    file:writeObject({self.stateDim,
+    file:writeObject({self.ncols,
+                      self.stateDim,
                       self.numActions,
                       self.histLen,
                       self.maxSize,
@@ -365,7 +417,8 @@ Recreates an empty table.
 @param file (FILE object ) @see torch.DiskFile
 --]]
 function trans:read(file)
-    local stateDim, numActions, histLen, maxSize, bufferSize, numEntries, insertIndex, recentMemSize, histIndices = unpack(file:readObject())
+    local ncols, stateDim, numActions, histLen, maxSize, bufferSize, numEntries, insertIndex, recentMemSize, histIndices = unpack(file:readObject())
+    self.ncols = ncols
     self.stateDim = stateDim
     self.numActions = numActions
     self.histLen = histLen
@@ -376,7 +429,7 @@ function trans:read(file)
     self.numEntries = 0
     self.insertIndex = 0
 
-    self.s = torch.ByteTensor(self.maxSize, self.stateDim):fill(0)
+    self.s = torch.ByteTensor(self.maxSize, self.ncols*self.stateDim):fill(0)
     self.a = torch.LongTensor(self.maxSize):fill(0)
     self.r = torch.zeros(self.maxSize)
     self.t = torch.ByteTensor(self.maxSize):fill(0)
@@ -391,8 +444,8 @@ function trans:read(file)
     self.buf_a      = torch.LongTensor(self.bufferSize):fill(0)
     self.buf_r      = torch.zeros(self.bufferSize)
     self.buf_term   = torch.ByteTensor(self.bufferSize):fill(0)
-    self.buf_s      = torch.ByteTensor(self.bufferSize, self.stateDim * self.histLen):fill(0)
-    self.buf_s2     = torch.ByteTensor(self.bufferSize, self.stateDim * self.histLen):fill(0)
+    self.buf_s      = torch.ByteTensor(self.bufferSize, self.ncols*self.stateDim * self.histLen):fill(0)
+    self.buf_s2     = torch.ByteTensor(self.bufferSize, self.ncols*self.stateDim * self.histLen):fill(0)
 
     if self.gpu and self.gpu >= 0 then
         self.gpu_s  = self.buf_s:float():cuda()

@@ -18,6 +18,7 @@ local fix_pre_encoder = global_args.fixweights
 
 function nql:__init(args)
     self.state_dim  = args.state_dim -- State dimensionality.
+    -- self.raw_dim    = args.raw_dim
     self.actions    = args.actions
     self.n_actions  = #self.actions
     self.verbose    = args.verbose
@@ -128,17 +129,27 @@ function nql:__init(args)
     ---- internally it always uses ByteTensors for states, scaling and
     ---- converting accordingly
     local transition_args = {
-        stateDim = self.state_dim, numActions = self.n_actions,
+        ncols = self.ncols, stateDim = self.state_dim,
+        numActions = self.n_actions,
         histLen = self.hist_len, gpu = self.gpu,
         maxSize = self.replay_memory, histType = self.histType,
         histSpacing = self.histSpacing, nonTermProb = self.nonTermProb,
         bufferSize = self.bufferSize
     }
+    -- local transition_args = {
+    --     ncols = self.ncols, rawDim = self.raw_dim, stateDim = self.state_dim,
+    --     numActions = self.n_actions,
+    --     histLen = self.hist_len, gpu = self.gpu,
+    --     maxSize = self.replay_memory, histType = self.histType,
+    --     histSpacing = self.histSpacing, nonTermProb = self.nonTermProb,
+    --     bufferSize = self.bufferSize
+    -- }
 
     self.transitions = dqn.TransitionTable(transition_args)
 
     self.numSteps = 0 -- Number of perceived states.
     self.lastState = nil
+    -- self.lastRawState = nil -- EDIT
     self.lastAction = nil
     self.v_avg = 0 -- V running average.
     self.tderr_avg = 0 -- TD error running average.
@@ -177,14 +188,20 @@ function nql:reset(state)
     print("RESET STATE SUCCESFULLY")
 end
 
+local scaler = nn.Scale(84,84)
 
 function nql:preprocess(rawstate)
-    if self.preproc then
-        return self.preproc:forward(rawstate:float())
-                    :clone():reshape(self.state_dim)
-    end
+    -- if self.preproc then
+    --     return self.preproc:forward(rawstate:float())
+    --                 :clone():reshape(self.state_dim)
+    -- end
 
-    return rawstate
+    local scaled = scaler:forward(rawstate:float():clone())
+    -- print("scaled", scaled:size())
+    -- iterm.image(scaled)
+    return scaled:reshape(self.ncols*self.state_dim)
+
+    -- return rawstate
 end
 
 
@@ -366,10 +383,19 @@ function nql:compute_validation_statistics(split)
     end
 end
 
+-- local scaler = nn.Scale(84,84)
+
+-- require 'Crop'
+-- local cropper = nn.Crop(160,180)
 
 function nql:perceive(reward, rawstate, terminal, testing, testing_ep)
     -- Preprocess state (will be set to nil if terminal)
-    local state = self:preprocess(rawstate):float()  -- TODO: THIS IS PREPROCESS
+    local state = self:preprocess(rawstate:float()):float()  -- TODO: THIS IS PREPROCESS
+    -- local state = image.scale(rawstate, 84, 84, 'bilinear')
+    -- local state = rawstate
+
+    -- local rawstate = cropper:forward(rawstate:float()):float()
+    -- iterm.image(rawstate)
 
     local curState
 
@@ -384,6 +410,7 @@ function nql:perceive(reward, rawstate, terminal, testing, testing_ep)
     end
 
     self.transitions:add_recent_state(state, terminal)
+    -- self.transitions:add_recent_state(rawstate, state, terminal)  -- EDIT
 
     local currentFullState = self.transitions:get_recent()
 
@@ -391,6 +418,8 @@ function nql:perceive(reward, rawstate, terminal, testing, testing_ep)
     if self.lastState and not testing then
         self.transitions:add(self.lastState, self.lastAction, reward,
                              self.lastTerminal, priority)
+        -- self.transitions:add(self.lastRawState, self.lastState, self.lastAction, reward,
+        --                      self.lastTerminal, priority)  -- EDIT
     end
 
     if self.numSteps == self.learn_start+1 and not testing then
@@ -422,6 +451,7 @@ function nql:perceive(reward, rawstate, terminal, testing, testing_ep)
     end
 
     self.lastState = state:clone()
+    -- self.lastRawState = rawstate:clone()
     self.lastAction = actionIndex
     self.lastTerminal = terminal
 
