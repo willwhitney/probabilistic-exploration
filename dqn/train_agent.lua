@@ -181,14 +181,31 @@ local lowerbound = 0
 -- trainData.y = util.oneHot(trainData.y)
 -- testData.y = util.oneHot(testData.y)
 
+function sign(x)
+    if x == 0 then return 0 end
+    return x / math.abs(x)
+end
+
 print("Iteration ..", step)
+local mean_lowerbound = nil
 while step < opt.steps do
     step = step + 1
 
-    -- local new_reward = reward + loss
+    local vae_input = image_scaler:forward(screen:float():reshape(1, 3, 210, 160)):cuda()
+    local reconstruction, reconstruction_var, mean, log_var = unpack(vae:forward(vae_input))
+    local err = gaussianCriterion:forward(reconstruction, vae_input)
+    local KLDerr = KLD:forward(mean, log_var)
+    local current_bound = - err - KLDerr
+
+    if mean_lowerbound == nil then
+        mean_lowerbound = current_bound
+    end
+
+    local new_reward = reward + 0.1 * sign(mean_lowerbound - current_bound)
+    mean_lowerbound = mean_lowerbound * 0.95 + current_bound * 0.05
 
     --
-    local action_index = agent:perceive(reward, screen, terminal)
+    local action_index = agent:perceive(new_reward, screen, terminal)
     -- local action_index = agent:perceive(reward, screen, terminal)
     --
 
@@ -327,7 +344,7 @@ while step < opt.steps do
         assert(step==agent.numSteps, 'trainer step: ' .. step ..
                 ' & agent.numSteps: ' .. agent.numSteps)
         print("Steps: ", step)
-        print("VAE lower bound: ", lowerbound / opt.prog_freq)
+        print("VAE lower bound: ", - lowerbound / opt.prog_freq)
         agent:report()
         collectgarbage()
         lowerbound = 0
