@@ -18,7 +18,7 @@ local fix_pre_encoder = global_args.fixweights
 
 function nql:__init(args)
     self.state_dim  = args.state_dim -- State dimensionality.
-    self.raw_dim    = args.raw_dim
+    -- self.raw_dim    = args.raw_dim
     self.actions    = args.actions
     self.n_actions  = #self.actions
     self.verbose    = args.verbose
@@ -129,19 +129,27 @@ function nql:__init(args)
     ---- internally it always uses ByteTensors for states, scaling and
     ---- converting accordingly
     local transition_args = {
-        ncols = self.ncols, rawDim = self.raw_dim, stateDim = self.state_dim,
+        ncols = self.ncols, stateDim = self.state_dim,
         numActions = self.n_actions,
         histLen = self.hist_len, gpu = self.gpu,
         maxSize = self.replay_memory, histType = self.histType,
         histSpacing = self.histSpacing, nonTermProb = self.nonTermProb,
         bufferSize = self.bufferSize
     }
+    -- local transition_args = {
+    --     ncols = self.ncols, rawDim = self.raw_dim, stateDim = self.state_dim,
+    --     numActions = self.n_actions,
+    --     histLen = self.hist_len, gpu = self.gpu,
+    --     maxSize = self.replay_memory, histType = self.histType,
+    --     histSpacing = self.histSpacing, nonTermProb = self.nonTermProb,
+    --     bufferSize = self.bufferSize
+    -- }
 
     self.transitions = dqn.TransitionTable(transition_args)
 
     self.numSteps = 0 -- Number of perceived states.
     self.lastState = nil
-    self.lastRawState = nil -- EDIT
+    -- self.lastRawState = nil -- EDIT
     self.lastAction = nil
     self.v_avg = 0 -- V running average.
     self.tderr_avg = 0 -- TD error running average.
@@ -401,17 +409,17 @@ function nql:perceive(reward, rawstate, terminal, testing, testing_ep)
         self.r_max = math.max(self.r_max, reward)
     end
 
-    -- self.transitions:add_recent_state(state, terminal)
-    self.transitions:add_recent_state(rawstate, state, terminal)  -- EDIT
+    self.transitions:add_recent_state(state, terminal)
+    -- self.transitions:add_recent_state(rawstate, state, terminal)  -- EDIT
 
     local currentFullState = self.transitions:get_recent()
 
     --Store transition s, a, r, s'
     if self.lastState and not testing then
-        -- self.transitions:add(self.lastState, self.lastAction, reward,
-        --                      self.lastTerminal, priority)
-        self.transitions:add(self.lastRawState, self.lastState, self.lastAction, reward,
-                             self.lastTerminal, priority)  -- EDIT
+        self.transitions:add(self.lastState, self.lastAction, reward,
+                             self.lastTerminal, priority)
+        -- self.transitions:add(self.lastRawState, self.lastState, self.lastAction, reward,
+        --                      self.lastTerminal, priority)  -- EDIT
     end
 
     if self.numSteps == self.learn_start+1 and not testing then
@@ -443,7 +451,7 @@ function nql:perceive(reward, rawstate, terminal, testing, testing_ep)
     end
 
     self.lastState = state:clone()
-    self.lastRawState = rawstate:clone()
+    -- self.lastRawState = rawstate:clone()
     self.lastAction = actionIndex
     self.lastTerminal = terminal
 

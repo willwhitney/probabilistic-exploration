@@ -193,23 +193,23 @@ while step < opt.steps do
     --
 
     if step >= opt.prog_freq then
-        -- local s, a, r, s2, term = agent.transitions:sample(agent.minibatch_size)
-        local s, a, r, s2, term = agent.transitions:sample_raw(agent.minibatch_size)
-        -- s = image_scaler:forward(s:float():reshape(agent.minibatch_size, 4, 1, 84, 84)[{{}, 1}]):cuda()
+        local s, a, r, s2, term = agent.transitions:sample(agent.minibatch_size)
+        -- local s, a, r, s2, term = agent.transitions:sample_raw(agent.minibatch_size)
+        s = image_scaler:forward(s:float():reshape(agent.minibatch_size, 4, 3, 84, 84)[{{}, 1}]):cuda()
         -- print(s:size())
 
         -- raw is (4 x 3 x 210 x 160)
         -- s = s:reshape(agent.minibatch_size, 4, 3, 210, 160)[{{}, 1}]:float()
-        s = s:reshape(agent.minibatch_size, 4, 3, 210, 160)[{{}, 1}]:float()
+        -- s = s:reshape(agent.minibatch_size, 4, 3, 210, 160)[{{}, 1}]:float()
 
-        if step % 100 == 0 then
-          for i = 1, 10 do
-              print('')
-              iterm.image{s[i]}
-          end
-        end
+        -- if step % 100 == 0 then
+          -- for i = 1, 10 do
+          --     print('')
+          --     iterm.image{s[i]}
+          -- end
+        -- end
 
-        s = image_scaler:forward(s):cuda()
+        -- s = image_scaler:forward(s):cuda()
         -- print(s:size())
         -- s = image_scaler:forward(s:float():reshape(agent.minibatch_size, 4, 3, 84, 84)[{{}, 1}]):cuda()
 
