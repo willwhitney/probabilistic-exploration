@@ -93,9 +93,9 @@ function VAE.get_decoder(latent_variable_size)
 
     mean_logvar:add(nn.Sequential()
       :add(SpatialConvolution(64, 3,  3, 3,  1, 1,  1, 1))
-      :add(nn.Clamp(-1, -1 + 1e5)))
-      -- :add(nn.Tanh())
-      -- :add(nn.MulConstant(.5)))
+      -- :add(nn.Clamp(-1, -1 + 1e5)))
+      :add(nn.Tanh())
+      :add(nn.MulConstant(5)))
 
     decoder:add(mean_logvar)
     print(decoder)

@@ -67,7 +67,7 @@ local print = function(...)
 end
 
 local result_file = assert(io.open(opt.name ..'.results.txt', 'w'), 'Failed to open result file')
-result_file:write("step,mean_test_reward,mean_test_lowerbound,mean_train_lowerbound,test_mean_bonus\n")
+result_file:write("step,total_reward,mean_lowerbound,mean_bonus\n")
 result_file:flush()
 
 local learn_start = agent.learn_start
@@ -124,9 +124,8 @@ require '../inference/KLDCriterion'
 require '../inference/GaussianCriterion'
 require '../inference/Sampler'
 
-
-encoder = VAE.get_encoder(10)
-decoder = VAE.get_decoder(10)
+encoder = VAE.get_encoder(400)
+decoder = VAE.get_decoder(400)
 
 local input = nn.Identity()()
 local enc_mean, enc_log_var = encoder(input):split(2)
@@ -197,23 +196,28 @@ local mean_bonus = 0
 while step < opt.steps do
     step = step + 1
 
-    local vae_input = image_scaler:forward(screen:float():reshape(1, 3, 210, 160)):cuda()
-    local reconstruction, reconstruction_var, mean, log_var = unpack(vae:forward(vae_input))
-    reconstruction = {reconstruction, reconstruction_var}
-    local err = gaussianCriterion:forward(reconstruction, vae_input)
-    local KLDerr = KLD:forward(mean, log_var)
-    local current_bound = - err - KLDerr
+    if false then
+        local vae_input = image_scaler:forward(screen:float():reshape(1, 3, 210, 160)):cuda()
+        local reconstruction, reconstruction_var, mean, log_var = unpack(vae:forward(vae_input))
+        reconstruction = {reconstruction, reconstruction_var}
+        local err = gaussianCriterion:forward(reconstruction, vae_input)
+        local KLDerr = KLD:forward(mean, log_var)
+        local current_bound = - err - KLDerr
 
-    if mean_lowerbound == nil then
-        mean_lowerbound = current_bound
+        if mean_lowerbound == nil then
+            mean_lowerbound = current_bound
+        end
+
+        local bonus = sign(mean_lowerbound - current_bound)
+        mean_bonus = mean_bonus * 0.95 + bonus * 0.05
+        -- print("mean lowerbound: ", mean_lowerbound)
+        -- print("current lowerbound: ", current_bound)
+        -- print("bonus: ", bonus)
+        local new_reward = reward + 0.1 * bonus
+    else
+        new_reward = reward
     end
-
-    local bonus = sign(mean_lowerbound - current_bound)
-    mean_bonus = mean_bonus * 0.95 + bonus * 0.05
-
-    -- local new_reward = reward + 0.1 * bonus
-    local new_reward = bonus
-    mean_lowerbound = mean_lowerbound * 0.95 + current_bound * 0.05
+    -- mean_lowerbound = mean_lowerbound * 0.95 + current_bound * 0.05
 
     --
     local action_index = agent:perceive(new_reward, screen, terminal)
@@ -335,7 +339,12 @@ while step < opt.steps do
             return batchlowerbound, vae_grads
         end
 
-        x, batchlowerbound = optim.adam(vae_opfunc, vae_params, vae_optim_config, vae_optim_state)
+        if false then 
+            x, batchlowerbound = optim.adam(vae_opfunc, vae_params, vae_optim_config, vae_optim_state)
+        else
+            x = 0
+            batchlowerbound = {0}
+        end
         lowerbound = lowerbound + batchlowerbound[1]
     end
 
@@ -365,9 +374,6 @@ while step < opt.steps do
     if step%1000 == 0 then collectgarbage() end
 
     if step % opt.eval_freq == 0 and step > learn_start then
-        local test_lowerbounds = {}
-        local test_bonuses = {}
-
 
         screen, reward, terminal = game_env:newGame()
 
@@ -378,16 +384,6 @@ while step < opt.steps do
 
         local eval_time = sys.clock()
         for estep=1,opt.eval_steps do
-            local vae_input = image_scaler:forward(screen:float():reshape(1, 3, 210, 160)):cuda()
-            local reconstruction, reconstruction_var, mean, log_var = unpack(vae:forward(vae_input))
-            reconstruction = {reconstruction, reconstruction_var}
-            local err = gaussianCriterion:forward(reconstruction, vae_input)
-            local KLDerr = KLD:forward(mean, log_var)
-            local current_bound = - err - KLDerr
-            table.insert(test_lowerbounds, current_bound)
-            local bonus = sign(mean_lowerbound - current_bound)
-            table.insert(test_bonuses, bonus)
-
             local action_index = agent:perceive(reward, screen, terminal, true, 0.05)
 
             -- Play game in test mode (episodes don't end when losing a life)
@@ -445,9 +441,7 @@ while step < opt.steps do
             step, step*opt.actrep, total_reward, agent.ep, agent.lr, time_dif,
             training_rate, eval_time, opt.actrep*opt.eval_steps/eval_time,
             nepisodes, nrewards))
-        local test_mean_lowerbound = torch.Tensor(test_lowerbounds):mean()
-        local test_mean_bonus = torch.Tensor(test_bonuses):mean()
-        result_file:write(step .. "," .. total_reward .. "," .. test_mean_lowerbound .. ',' .. mean_lowerbound.. ',' .. test_mean_bonus .. "\n")
+        result_file:write(step .. "," .. total_reward .. "\n")
         result_file:flush()
     end
 
@@ -483,12 +477,7 @@ while step < opt.steps do
                                 v_history = v_history,
                                 td_history = td_history,
                                 qmax_history = qmax_history,
-                                arguments = opt,})
-        torch.save(filename .. '.vae.t7', 
-            {
-                vae=vae,
-                mean_lowerbound = mean_lowerbound,
-            })
+                                arguments=opt})
         if opt.saveNetworkParams then
             local nets = {network=w:clone():float()}
             torch.save(filename..'.params.t7', nets, 'ascii')

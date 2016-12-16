@@ -1,0 +1,6 @@
+require 'inference/VAE'
+require 'inference/KLDFlexCriterion'
+require 'inference/KLDCriterion'
+require 'inference/GaussianCriterion'
+require 'inference/Sampler'
+require 'nngraph'

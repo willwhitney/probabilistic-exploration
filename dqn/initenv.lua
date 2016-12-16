@@ -134,6 +134,8 @@ function setup(_opt)
         require 'NeuralQLearner'
     elseif _opt.agent == 'NeuralQLearnerReshape' then
         require 'NeuralQLearnerReshape'
+    elseif _opt.agent == 'NeuralQLearnerhack' then
+        require 'NeuralQLearnerhack'
     end
 
     local agent = dqn[_opt.agent](_opt.agent_params)
