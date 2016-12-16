@@ -39,7 +39,7 @@ eval_steps=5000
 prog_freq=1000
 
 # save_freq=100
-save_freq=125000
+save_freq=50000
 gpu=0
 random_starts=30
 pool_frms="type="$pool_frms_type",size="$pool_frms_size

@@ -211,8 +211,8 @@ while step < opt.steps do
     local bonus = sign(mean_lowerbound - current_bound)
     mean_bonus = mean_bonus * 0.95 + bonus * 0.05
 
-    -- local new_reward = reward + 0.1 * bonus
-    local new_reward = bonus
+    local new_reward = reward + 0.1 * bonus
+    -- local new_reward = bonus
     mean_lowerbound = mean_lowerbound * 0.95 + current_bound * 0.05
 
     --
@@ -282,7 +282,7 @@ while step < opt.steps do
             -- print("reconstruction", reconstruction)
             -- print("reconstruction", reconstruction[1][1]:size())
 
-            if step % 100 == 0 then
+            if step % 1000 == 0 then
                 for i = 1, 10 do
                     print('')
                     iterm.image{s[i], reconstruction[1][i]}
